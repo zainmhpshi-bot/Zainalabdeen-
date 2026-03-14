@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تحصيل ضرائب العقارات - محافظة إب</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root { --primary: #003366; --danger: #c0392b; --success: #28a745; --warning: #f39c12; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #f4f7f6; margin: 0; padding: 10px; }
+        
+        .container { max-width: 1000px; margin: auto; background: white; border-radius: 12px; padding: 20px; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        
+        #securityLayer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 1; opacity: 0.05;
+            background-repeat: repeat; background-size: 120px 120px; display: none;
+        }
+
+        .official-header { display: none; text-align: center; border-bottom: 2px solid #000; margin-bottom: 20px; padding-bottom: 10px; }
+        .header-content { display: flex; justify-content: space-between; align-items: center; }
+        .logo-img { width: 90px; height: 90px; object-fit: contain; }
+
+        .no-print { position: relative; z-index: 20; }
+        .form-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 12px; background: #f9f9f9; padding: 15px; border: 1px solid #ddd; 
+            border-radius: 8px; margin-bottom: 20px; 
+        }
+        
+        .field { display: flex; flex-direction: column; font-size: 12px; font-weight: bold; position: relative; }
+        input, select { padding: 10px; border: 1px solid #ccc; border-radius: 5px; margin-top: 5px; font-family: inherit; }
+        
+        /* تصميم زر الميكروفون داخل الحقل */
+        .input-wrapper { position: relative; display: flex; align-items: center; }
+        .input-wrapper input { width: 100%; padding-left: 35px; }
+        .mic-btn { 
+            position: absolute; left: 8px; top: 55%; transform: translateY(-50%);
+            background: none; border: none; cursor: pointer; font-size: 18px; color: #666;
+            padding: 5px; transition: 0.3s;
+        }
+        .mic-btn:hover { color: var(--danger); }
+        .mic-active { color: red !important; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { transform: translateY(-50%) scale(1); } 50% { transform: translateY(-50%) scale(1.2); } 100% { transform: translateY(-50%) scale(1); } }
+
+        .agent-box { background: #fffde7; padding: 10px; border-radius: 8px; grid-column: span 2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border: 1px solid #ffe58f; }
+
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .btn { flex: 1; padding: 12px; border: none; border-radius: 6px; color: white; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        .btn-add { background: var(--success); }
+        .btn-pdf { background: var(--danger); }
+        .btn-add:hover { background: #218838; }
+        
+        .table-wrapper { width: 100%; overflow-x: auto; position: relative; z-index: 10; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        th, td { border: 1px solid #000; padding: 8px; text-align: center; }
+        th { background: #eeeeee; }
+        
+        @media print {
+            .no-print, .mic-btn { display: none !important; }
+            .official-header, #securityLayer { display: block !important; }
+            body { padding: 0; background: white; }
+            .container { box-shadow: none; border: none; width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container" id="mainExportArea">
+    <div id="securityLayer"></div>
+
+    <div class="official-header" id="headerPDF">
+        <div class="header-content">
+            <div style="text-align: right;">الجمهورية اليمنية<br>وزارة المالية<br>مصلحة الضرائب</div>
+            <img id="logoDisplay" class="logo-img" src="" style="display:none;">
+            <div style="text-align: left;">فرع الوحدة التنفيذية<br>لضرائب العقارات - إب<br>كشف تحصيل يومي</div>
+        </div>
+    </div>
+
+    <div id="uploadZone" class="no-print" style="text-align:center; margin-bottom:15px;">
+        <label style="background: var(--primary); color:white; padding: 8px 15px; border-radius: 5px; cursor:pointer; font-size: 12px;">
+            📁 ارفع شعار المصلحة (لتفعيل الأمان)
+            <input type="file" id="logoLoader" hidden accept="image/*">
+        </label>
+    </div>
+
+    <div class="form-grid no-print">
+        <div class="field"><label>رقم السند</label><input type="number" id="fDoc"></div>
+        <div class="field"><label>الملف الضريبي</label><input type="text" id="fTax"></div>
+        
+        <div class="field">
+            <label>اسم المالك (🎤)</label>
+            <div class="input-wrapper">
+                <input type="text" id="fOwner" placeholder="انقر الميكروفون للتحدث">
+                <button class="mic-btn" onclick="startVoice('fOwner')">🎤</button>
+            </div>
+        </div>
+
+        <div class="field"><label>الموقع</label><input type="text" id="fLoc" value="إب"></div>
+        <div class="field"><label>المبلغ</label><input type="number" id="fBase" oninput="doCalc()"></div>
+        <div class="field">
+            <label>الحالة</label>
+            <select id="fStat" onchange="doCalc()">
+                <option value="جاري">جاري</option>
+                <option value="غرامة">غرامة 9%</option>
+            </select>
+        </div>
+        <div class="field"><label>الإجمالي</label><input type="text" id="fFinal" readonly style="background:#eee;"></div>
+        
+        <div class="agent-box">
+            <div class="field">
+                <label>المسدد (🎤)</label>
+                <div class="input-wrapper">
+                    <input type="text" id="fPayer" placeholder="تحدث الآن">
+                    <button class="mic-btn" onclick="startVoice('fPayer')">🎤</button>
+                </div>
+            </div>
+            <div class="field"><label>الصفة</label><select id="fType"><option>نفسه</option><option>وكيل</option><option>ولي</option></select></div>
+        </div>
+    </div>
+
+    <div class="btn-group no-print">
+        <button class="btn btn-add" onclick="saveEntry()">إضافة السجل ✅</button>
+        <button class="btn btn-pdf" onclick="exportToPDF()">تصدير PDF رسمي 📄</button>
+    </div>
+
+    <div class="table-wrapper">
+        <table id="mainTable">
+            <thead>
+                <tr>
+                    <th>سند</th><th>ملف</th><th>المالك</th><th>الموقع</th><th>المسدد</th><th>الأصل</th><th>الغرامة</th><th>الإجمالي</th><th>الحالة</th><th>QR</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    let db = JSON.parse(localStorage.getItem('eb_tax_v11')) || [];
+    let currentLogo = localStorage.getItem('eb_logo_v11') || "";
+
+    window.onload = () => { 
+        if(currentLogo) setLogo(currentLogo); 
+        refresh(); 
+        document.getElementById('fDoc').value = db.length > 0 ? parseInt(db[db.length-1].doc) + 1 : 1001;
+    };
+
+    // ميزة تحويل الصوت إلى نص
+    function startVoice(fieldId) {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("عذراً، متصفحك لا يدعم التعرف على الصوت. يرجى استخدام متصفح Chrome.");
+            return;
+        }
+
+        const recognition = new webkitSpeechRecognition();
+        recognition.lang = "ar-SA"; // اللغة العربية
+        recognition.interimResults = false;
+        
+        const btn = event.currentTarget;
+        btn.classList.add('mic-active');
+
+        recognition.start();
+
+        recognition.onresult = (event) => {
+            const text = event.results[0][0].transcript;
+            document.getElementById(fieldId).value = text;
+            btn.classList.remove('mic-active');
+        };
+
+        recognition.onerror = () => {
+            btn.classList.remove('mic-active');
+            alert("لم يتم التعرف على الصوت. تأكد من إذن الميكروفون.");
+        };
+
+        recognition.onend = () => btn.classList.remove('mic-active');
+    }
+
+    // إدارة الشعار والأمان
+    document.getElementById('logoLoader').onchange = function(e) {
+        const reader = new FileReader();
+        reader.onload = function() {
+            currentLogo = reader.result;
+            localStorage.setItem('eb_logo_v11', currentLogo);
+            setLogo(currentLogo);
+        };
+        reader.readAsDataURL(e.target.files[0]);
+    };
+
+    function setLogo(src) {
+        document.getElementById('logoDisplay').src = src;
+        document.getElementById('logoDisplay').style.display = 'block';
+        const layer = document.getElementById('securityLayer');
+        layer.style.backgroundImage = `url(${src})`;
+        layer.style.display = 'block';
+    }
+
+    function doCalc() {
+        let b = parseFloat(document.getElementById('fBase').value) || 0;
+        let total = document.getElementById('fStat').value === 'غرامة' ? b * 1.09 : b;
+        document.getElementById('fFinal').value = total.toLocaleString();
+    }
+
+    function saveEntry() {
+        const doc = document.getElementById('fDoc').value;
+        const base = parseFloat(document.getElementById('fBase').value) || 0;
+        if(!doc || !base) return alert("يرجى إدخال البيانات الأساسية");
+
+        const pen = document.getElementById('fStat').value === 'غرامة' ? base * 0.09 : 0;
+
+        db.push({
+            doc, tax: document.getElementById('fTax').value || "-",
+            owner: document.getElementById('fOwner').value || "غير مسجل",
+            loc: document.getElementById('fLoc').value,
+            payer: document.getElementById('fPayer').value || document.getElementById('fOwner').value,
+            base, pen, total: base + pen, stat: document.getElementById('fStat').value
+        });
+
+        localStorage.setItem('eb_tax_v11', JSON.stringify(db));
+        refresh();
+        document.getElementById('fDoc').value = parseInt(doc) + 1;
+        ['fTax', 'fOwner', 'fBase', 'fFinal', 'fPayer'].forEach(id => document.getElementById(id).value = '');
+    }
+
+    function refresh() {
+        const tbody = document.getElementById('tableBody'); tbody.innerHTML = '';
+        db.forEach((r, i) => {
+            const tr = tbody.insertRow();
+            tr.innerHTML = `<td>${r.doc}</td><td>${r.tax}</td><td>${r.owner}</td><td>${r.loc}</td><td>${r.payer}</td><td>${r.base}</td><td>${r.pen.toFixed(0)}</td><td><b>${r.total.toLocaleString()}</b></td><td>${r.stat}</td><td class="qr-cell"><div id="qr${i}"></div></td>`;
+            new QRCode(document.getElementById(`qr${i}`), { text: `سند:${r.doc}|مبلغ:${r.total}`, width: 40, height: 40 });
+        });
+    }
+
+    function exportToPDF() {
+        if(!currentLogo) return alert("يرجى رفع الشعار أولاً لضمان رسمية التقرير!");
+        const element = document.getElementById('mainExportArea');
+        document.getElementById('headerPDF').style.display = 'block';
+
+        const opt = {
+            margin: 5, filename: `ضرائب_عقارات_إب_${new Date().toLocaleDateString()}.pdf`,
+            html2canvas: { scale: 3, useCORS: true },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
+        };
+
+        html2pdf().set(opt).from(element).save().then(() => {
+            document.getElementById('headerPDF').style.display = 'none';
+        });
+    }
+</script>
+</body>
+</html>
